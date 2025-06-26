@@ -1,7 +1,7 @@
 import threading
 import time
 import string
-from zlapi import ZaloAPI, ThreadType, Message
+from zlapi import ZaloAPI, ThreadType, Message, Mention, MultiMention
 from config import API_KEY, SECRET_KEY, IMEI, SESSION_COOKIES
 from collections import defaultdict
 
@@ -60,11 +60,19 @@ class Bot(ZaloAPI):
             except ValueError:
                 print("Vui lòng nhập số hợp lệ.")
 
-    def send_reo_input(self, thread_id):
+    def send_reo_input(self, thread_id, mention_all=False):
         self.running = True
         print("\n✅ Bắt đầu gửi tin nhắn.")
         print("Gõ nội dung và nhấn Enter để gửi.")
         print("Gõ `exit` để dừng.\n")
+
+        members = []
+        if mention_all:
+            try:
+                group_info = super().fetchGroupInfo(thread_id)
+                members = group_info['gridInfoMap'][str(thread_id)]['memVerList']
+            except Exception as e:
+                print(f"❌ Không thể lấy danh sách thành viên để tag: {e}")
 
         def input_loop():
             while self.running:
@@ -74,8 +82,15 @@ class Bot(ZaloAPI):
                         self.stop_sending()
                         break
                     if user_input:
-                        message = Message(text=user_input)
-                        self.send(message, thread_id=thread_id, thread_type=ThreadType.GROUP)
+                        mentions = [
+                            Mention(userId.split('_')[0], length=1, offset=len(user_input) + 1, auto_format=False)
+                            for userId in members
+                        ] if mention_all and members else None
+                        msg = Message(
+                            text=user_input,
+                            mention=MultiMention(mentions) if mentions else None
+                        )
+                        self.send(msg, thread_id=thread_id, thread_type=ThreadType.GROUP)
                         print("✅ Đã gửi.")
                 except Exception as e:
                     print(f"❌ Lỗi khi gửi: {e}")
@@ -95,21 +110,22 @@ class Bot(ZaloAPI):
         print("⛔ Đã dừng gửi tin nhắn.")
 
 def run_tool():
-    print("TOOL GỬI NỘI DUNG TRỰC TIẾP KHÔNG TAG - KHÔNG DELAY")
-    print("[1] Gửi nội dung trực tiếp vào nhóm")
-    print("[0] Thoát")
-    choice = input("Nhập lựa chọn: ").strip()
+    print("TOOL GỬI NỘI DUNG ZALO")
+    print("[1] Gửi nội dung thường")
+    print("[2] Gửi nội dung có tag ẩn tất cả thành viên")
+    while True:
+        option = input("Chọn chế độ (1 hoặc 2): ").strip()
+        if option in ['1', '2']:
+            break
+        print("Vui lòng chọn 1 hoặc 2.")
 
-    if choice != '1':
-        print("Đã thoát tool.")
-        return
+    mention_all = option == '2'
 
     client = Bot(API_KEY, SECRET_KEY, IMEI, SESSION_COOKIES)
     thread_id = client.select_group()
     if not thread_id:
         return
-
-    client.send_reo_input(thread_id=thread_id)
+    client.send_reo_input(thread_id=thread_id, mention_all=mention_all)
 
 if __name__ == "__main__":
     run_tool()
